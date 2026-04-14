@@ -1,13 +1,27 @@
 const BOARD_ROWS = 5
 const BOARD_COLUMNS = 5
 const TRAY_TILE_COUNT = 6
-const FALLBACK_HIRAGANA = ["あ", "い", "う", "え", "お", "ん"]
+const STARTER_POSITION = { row: 2, column: 2 }
+const STARTER_CHARACTER = "\u3042"
+const HIRAGANA_REGEX = /[\u3041-\u3093\u30fc]/g
+const FALLBACK_HIRAGANA = [
+  "\u3042",
+  "\u3044",
+  "\u3046",
+  "\u3048",
+  "\u304a",
+  "\u3093",
+]
 
 const boardElement = document.querySelector("[data-board]")
 const trayElement = document.querySelector("[data-tray]")
+const statusElement = document.querySelector("[data-status]")
+const debugElement = document.querySelector("[data-debug]")
 
 let selectedTileId = null
 let activeTileChar = null
+let dictionaryWords = []
+let dictionarySet = new Set()
 
 buildBoard()
 wireTrayDropzone()
@@ -60,28 +74,48 @@ function wireTrayDropzone() {
   })
 }
 
-async function loadDictionary() {
-  try {
-    const response = await fetch("./dict2.json")
+function loadDictionary() {
+  const source = Array.isArray(window.__DICT__) ? window.__DICT__ : []
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-
-    const words = await response.json()
-    const tilePool = buildTilePool(words)
-    renderTray(tilePool)
-  } catch (error) {
-    renderTray(FALLBACK_HIRAGANA)
-    console.error("Unable to load dict2.json", error)
+  if (source.length > 0) {
+    dictionaryWords = source.map(word => normalizeKana(word)).filter(Boolean)
+    dictionarySet = new Set(dictionaryWords)
+    placeStarterTile(STARTER_CHARACTER)
+    renderTray(buildTilePool(dictionaryWords))
+    setStatus("Starter tile is \u3042. Place a tile next to it and form a word.")
+    setDebug([
+      "dictionary loaded",
+      `entries: ${dictionaryWords.length}`,
+      `starter: ${STARTER_CHARACTER}`,
+    ])
+    return
   }
+
+  dictionaryWords = []
+  dictionarySet = new Set()
+  placeStarterTile(STARTER_CHARACTER)
+  renderTray(FALLBACK_HIRAGANA)
+  setStatus("Dictionary unavailable. Demo is using fallback tiles.")
+  setDebug(["dictionary unavailable", "window.__DICT__ missing or empty"])
+}
+
+function placeStarterTile(character) {
+  const starterCell = getCell(STARTER_POSITION.row, STARTER_POSITION.column)
+
+  if (!starterCell) {
+    return
+  }
+
+  starterCell.innerHTML = ""
+  starterCell.append(createBoardTile(character, true))
+  refreshBoardState()
 }
 
 function buildTilePool(words) {
   const counts = new Map()
 
   words.forEach(word => {
-    const kana = [...word.matchAll(/[ぁ-んー]/g)].map(match => match[0])
+    const kana = [...word.matchAll(HIRAGANA_REGEX)].map(match => match[0])
     kana.forEach(character => {
       counts.set(character, (counts.get(character) || 0) + 1)
     })
@@ -105,23 +139,23 @@ function renderTray(characters) {
 
   const tileFragment = document.createDocumentFragment()
   characters.forEach((character, index) => {
-    tileFragment.append(createTile(character, index))
+    tileFragment.append(createTrayTile(character, index))
   })
 
   trayElement.append(tileFragment)
-  refreshBoardState()
   clearSelection()
 }
 
-function createTile(character, index) {
+function createTrayTile(character, index) {
+  const normalizedCharacter = normalizeKana(character)
   const tile = document.createElement("button")
   tile.type = "button"
   tile.className = "tile"
-  tile.textContent = character
-  tile.dataset.tileId = `tile-${index}-${character}`
-  tile.dataset.character = character
+  tile.textContent = normalizedCharacter
+  tile.dataset.tileId = `tile-${index}-${normalizedCharacter}`
+  tile.dataset.character = normalizedCharacter
   tile.draggable = true
-  tile.setAttribute("aria-label", `Hiragana tile ${character}`)
+  tile.setAttribute("aria-label", `Hiragana tile ${normalizedCharacter}`)
 
   tile.addEventListener("dragstart", event => {
     selectedTileId = tile.dataset.tileId
@@ -140,11 +174,6 @@ function createTile(character, index) {
   })
 
   tile.addEventListener("click", () => {
-    if (tile.parentElement?.classList.contains("board-cell")) {
-      moveTileToTray(tile.dataset.tileId)
-      return
-    }
-
     if (selectedTileId === tile.dataset.tileId) {
       clearSelection()
       return
@@ -152,6 +181,21 @@ function createTile(character, index) {
 
     setSelectedTile(tile)
   })
+
+  return tile
+}
+
+function createBoardTile(character, isPermanent = false) {
+  const normalizedCharacter = normalizeKana(character)
+  const tile = document.createElement("div")
+  tile.className = `tile${isPermanent ? " permanent" : ""}`
+  tile.textContent = normalizedCharacter
+  tile.dataset.character = normalizedCharacter
+
+  if (isPermanent) {
+    tile.dataset.permanent = "true"
+    tile.setAttribute("aria-label", `Permanent hiragana tile ${normalizedCharacter}`)
+  }
 
   return tile
 }
@@ -200,38 +244,215 @@ function handleCellDrop(event) {
 }
 
 function moveTileToCell(tileId, cell) {
-  const tile = findTile(tileId)
+  const tile = findTrayTile(tileId)
   if (!tile || !cell) {
     return
   }
 
-  const existingTile = cell.querySelector(".tile")
-  if (existingTile && existingTile !== tile) {
-    trayElement.append(existingTile)
+  if (cell.querySelector(".tile")) {
+    setStatus("That square is already occupied.")
+    setDebug([
+      `attempt: ${normalizeKana(tile.dataset.character)} @ ${cell.dataset.row},${cell.dataset.column}`,
+      "result: occupied square",
+    ])
+    return
   }
 
-  cell.append(tile)
+  const placement = evaluatePlacement(cell, normalizeKana(tile.dataset.character))
+
+  if (!placement.valid) {
+    setStatus(placement.reason)
+    setDebug(placement.debug)
+    return
+  }
+
+  cell.append(createBoardTile(tile.dataset.character))
   refreshBoardState()
   clearSelection()
+  setStatus(`Valid: ${placement.words.join(" / ")}`)
+  setDebug(placement.debug)
 }
 
 function moveTileToTray(tileId) {
-  const tile = findTile(tileId)
+  const tile = findTrayTile(tileId)
   if (!tile) {
     return
   }
 
   trayElement.append(tile)
-  refreshBoardState()
   clearSelection()
 }
 
-function findTile(tileId) {
-  return document.querySelector(`[data-tile-id="${CSS.escape(tileId)}"]`)
+function evaluatePlacement(cell, character) {
+  if (!hasAdjacentTile(cell)) {
+    return {
+      valid: false,
+      reason: "Place tiles next to an existing hiragana tile.",
+      words: [],
+      debug: [
+        `attempt: ${character} @ ${cell.dataset.row},${cell.dataset.column}`,
+        "adjacent: false",
+        "words: none",
+      ],
+    }
+  }
+
+  const horizontal = collectLineWords(cell, character, 0, 1, "horizontal")
+  const vertical = collectLineWords(cell, character, 1, 0, "vertical")
+  const formedWords = [...horizontal.words, ...vertical.words]
+  const uniqueWords = [...new Set(formedWords)]
+  const debug = [
+    `attempt: ${character} @ ${cell.dataset.row},${cell.dataset.column}`,
+    "adjacent: true",
+    horizontal.debug,
+    vertical.debug,
+    `matched: ${uniqueWords.length ? uniqueWords.join(", ") : "none"}`,
+  ]
+
+  if (uniqueWords.length === 0) {
+    return {
+      valid: false,
+      reason: "That move must form at least one dictionary word.",
+      words: [],
+      debug,
+    }
+  }
+
+  return {
+    valid: true,
+    reason: "",
+    words: uniqueWords,
+    debug,
+  }
+}
+
+function collectLineWords(cell, character, rowDelta, columnDelta, label) {
+  const row = Number(cell.dataset.row)
+  const column = Number(cell.dataset.column)
+  const line = buildLine(row, column, character, rowDelta, columnDelta)
+
+  if (line.characters.length < 2) {
+    return {
+      words: [],
+      debug: `${label}: line=${line.characters.join("") || "(single)"} candidates=none matches=none`,
+    }
+  }
+
+  const words = []
+  const candidates = []
+
+  for (let start = 0; start <= line.index; start += 1) {
+    for (let end = line.index; end < line.characters.length; end += 1) {
+      if (end - start + 1 < 2) {
+        continue
+      }
+
+      const candidate = normalizeKana(
+        line.characters.slice(start, end + 1).join("")
+      )
+      candidates.push(candidate)
+
+      if (dictionarySet.has(candidate)) {
+        words.push(candidate)
+      }
+    }
+  }
+
+  return {
+    words,
+    debug:
+      `${label}: line=${line.characters.join("")} ` +
+      `candidates=${candidates.length ? candidates.join(", ") : "none"} ` +
+      `matches=${words.length ? words.join(", ") : "none"}`,
+  }
+}
+
+function buildLine(row, column, character, rowDelta, columnDelta) {
+  let startRow = row
+  let startColumn = column
+
+  while (true) {
+    const nextRow = startRow - rowDelta
+    const nextColumn = startColumn - columnDelta
+    const nextCharacter = getCharacterAt(nextRow, nextColumn)
+
+    if (!nextCharacter) {
+      break
+    }
+
+    startRow = nextRow
+    startColumn = nextColumn
+  }
+
+  const characters = []
+  let index = -1
+  let currentRow = startRow
+  let currentColumn = startColumn
+
+  while (true) {
+    let currentCharacter = getCharacterAt(currentRow, currentColumn)
+
+    if (currentRow === row && currentColumn === column) {
+      currentCharacter = character
+      index = characters.length
+    }
+
+    if (!currentCharacter) {
+      break
+    }
+
+    characters.push(currentCharacter)
+    currentRow += rowDelta
+    currentColumn += columnDelta
+  }
+
+  return { characters, index }
+}
+
+function hasAdjacentTile(cell) {
+  const row = Number(cell.dataset.row)
+  const column = Number(cell.dataset.column)
+
+  return [
+    getCharacterAt(row - 1, column),
+    getCharacterAt(row + 1, column),
+    getCharacterAt(row, column - 1),
+    getCharacterAt(row, column + 1),
+  ].some(Boolean)
+}
+
+function getCharacterAt(row, column) {
+  const cell = getCell(row, column)
+  const tile = cell?.querySelector(".tile")
+  return tile?.dataset.character ? normalizeKana(tile.dataset.character) : null
+}
+
+function getCell(row, column) {
+  return document.querySelector(
+    `.board-cell[data-row="${row}"][data-column="${column}"]`
+  )
+}
+
+function findTrayTile(tileId) {
+  return trayElement.querySelector(`[data-tile-id="${CSS.escape(tileId)}"]`)
 }
 
 function refreshBoardState() {
   document.querySelectorAll(".board-cell").forEach(cell => {
     cell.classList.toggle("has-tile", Boolean(cell.querySelector(".tile")))
   })
+}
+
+function setStatus(message) {
+  statusElement.textContent = message
+}
+
+function setDebug(lines) {
+  debugElement.textContent = Array.isArray(lines) ? lines.join("\n") : String(lines)
+}
+
+function normalizeKana(value) {
+  return typeof value === "string"
+    ? value.trim().normalize("NFC")
+    : ""
 }

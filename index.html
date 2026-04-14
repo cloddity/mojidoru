@@ -6,19 +6,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="styles.css" />
     <title>Hiragana Board Demo</title>
+    <script src="dict.js" defer></script>
     <script src="script.js" defer></script>
   </head>
   <body>
     <main class="app-shell">
       <div class="game-layout">
         <aside class="tray" data-tray aria-label="Hiragana tiles"></aside>
-        <section
-          class="board"
-          data-board
-          role="grid"
-          aria-label="Word building board"
-        ></section>
       </div>
+      <section
+        class="board"
+        data-board
+        role="grid"
+        aria-label="Word building board"
+      ></section>
+      <p class="status" data-status>Loading dictionary...</p>
+      <pre class="debug" data-debug aria-live="polite"></pre>
     </main>
   </body>
 </html>
