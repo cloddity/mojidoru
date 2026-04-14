@@ -11,17 +11,43 @@
   </head>
   <body>
     <main class="app-shell">
-      <div class="game-layout">
-        <aside class="tray" data-tray aria-label="Hiragana tiles"></aside>
+      <div class="topbar">
+        <div class="total-score">
+          <span class="score-label">Total</span>
+          <strong data-total-score>0</strong>
+        </div>
       </div>
-      <section
-        class="board"
-        data-board
-        role="grid"
-        aria-label="Word building board"
-      ></section>
-      <p class="status" data-status>Loading dictionary...</p>
-      <pre class="debug" data-debug aria-live="polite"></pre>
+      <div class="layout">
+        <aside class="sidebar">
+          <section class="score-panel" aria-label="Score breakdown">
+            <div class="score-row">
+              <span class="score-label">Base</span>
+              <strong data-turn-base>0</strong>
+            </div>
+            <div class="score-formula">sum(10 x 2^(L-1))</div>
+            <div class="score-row">
+              <span class="score-label">W</span>
+              <strong data-turn-multiplier>0</strong>
+            </div>
+            <div class="score-formula">words made</div>
+            <div class="score-row score-turn">
+              <span class="score-label">Turn</span>
+              <strong data-turn-score>0</strong>
+            </div>
+          </section>
+          <aside class="tray" data-tray aria-label="Hiragana tiles"></aside>
+        </aside>
+        <section class="main">
+          <section
+            class="board"
+            data-board
+            role="grid"
+            aria-label="Word building board"
+          ></section>
+          <p class="status" data-status>Loading dictionary...</p>
+          <pre class="debug" data-debug aria-live="polite"></pre>
+        </section>
+      </div>
     </main>
   </body>
 </html>

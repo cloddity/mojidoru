@@ -17,11 +17,17 @@ const boardElement = document.querySelector("[data-board]")
 const trayElement = document.querySelector("[data-tray]")
 const statusElement = document.querySelector("[data-status]")
 const debugElement = document.querySelector("[data-debug]")
+const totalScoreElement = document.querySelector("[data-total-score]")
+const turnBaseElement = document.querySelector("[data-turn-base]")
+const turnMultiplierElement = document.querySelector("[data-turn-multiplier]")
+const turnScoreElement = document.querySelector("[data-turn-score]")
 
 let selectedTileId = null
 let activeTileChar = null
 let dictionaryWords = []
 let dictionarySet = new Set()
+let totalScore = 0
+let isAnimatingScore = false
 
 buildBoard()
 wireTrayDropzone()
@@ -88,6 +94,7 @@ function loadDictionary() {
       `entries: ${dictionaryWords.length}`,
       `starter: ${STARTER_CHARACTER}`,
     ])
+    updateScoreDisplay({ base: 0, multiplier: 0, turn: 0 })
     return
   }
 
@@ -97,6 +104,7 @@ function loadDictionary() {
   renderTray(FALLBACK_HIRAGANA)
   setStatus("Dictionary unavailable. Demo is using fallback tiles.")
   setDebug(["dictionary unavailable", "window.__DICT__ missing or empty"])
+  updateScoreDisplay({ base: 0, multiplier: 0, turn: 0 })
 }
 
 function placeStarterTile(character) {
@@ -239,18 +247,19 @@ function handleCellDrop(event) {
 
   const tileId = event.dataTransfer?.getData("text/plain")
   if (tileId) {
-    moveTileToCell(tileId, cell)
+    void moveTileToCell(tileId, cell)
   }
 }
 
-function moveTileToCell(tileId, cell) {
+async function moveTileToCell(tileId, cell) {
   const tile = findTrayTile(tileId)
-  if (!tile || !cell) {
+  if (!tile || !cell || isAnimatingScore) {
     return
   }
 
   if (cell.querySelector(".tile")) {
     setStatus("That square is already occupied.")
+    updateScoreDisplay({ base: 0, multiplier: 0, turn: 0 })
     setDebug([
       `attempt: ${normalizeKana(tile.dataset.character)} @ ${cell.dataset.row},${cell.dataset.column}`,
       "result: occupied square",
@@ -262,6 +271,7 @@ function moveTileToCell(tileId, cell) {
 
   if (!placement.valid) {
     setStatus(placement.reason)
+    updateScoreDisplay({ base: 0, multiplier: 0, turn: 0 })
     setDebug(placement.debug)
     return
   }
@@ -271,6 +281,9 @@ function moveTileToCell(tileId, cell) {
   clearSelection()
   setStatus(`Valid: ${placement.words.join(" / ")}`)
   setDebug(placement.debug)
+  await animateScoring(placement.occurrences)
+  totalScore += placement.score.turn
+  updateScoreDisplay(placement.score)
 }
 
 function moveTileToTray(tileId) {
@@ -299,14 +312,17 @@ function evaluatePlacement(cell, character) {
 
   const horizontal = collectLineWords(cell, character, 0, 1, "horizontal")
   const vertical = collectLineWords(cell, character, 1, 0, "vertical")
-  const formedWords = [...horizontal.words, ...vertical.words]
+  const occurrences = [...horizontal.occurrences, ...vertical.occurrences]
+  const formedWords = occurrences.map(occurrence => occurrence.word)
   const uniqueWords = [...new Set(formedWords)]
+  const score = calculateScore(formedWords)
   const debug = [
     `attempt: ${character} @ ${cell.dataset.row},${cell.dataset.column}`,
     "adjacent: true",
     horizontal.debug,
     vertical.debug,
-    `matched: ${uniqueWords.length ? uniqueWords.join(", ") : "none"}`,
+    `matched: ${formedWords.length ? formedWords.join(", ") : "none"}`,
+    `score: base=${score.base} x W=${score.multiplier} => ${score.turn}`,
   ]
 
   if (uniqueWords.length === 0) {
@@ -314,6 +330,8 @@ function evaluatePlacement(cell, character) {
       valid: false,
       reason: "That move must form at least one dictionary word.",
       words: [],
+      score,
+      occurrences,
       debug,
     }
   }
@@ -322,6 +340,8 @@ function evaluatePlacement(cell, character) {
     valid: true,
     reason: "",
     words: uniqueWords,
+    score,
+    occurrences,
     debug,
   }
 }
@@ -333,12 +353,12 @@ function collectLineWords(cell, character, rowDelta, columnDelta, label) {
 
   if (line.characters.length < 2) {
     return {
-      words: [],
+      occurrences: [],
       debug: `${label}: line=${line.characters.join("") || "(single)"} candidates=none matches=none`,
     }
   }
 
-  const words = []
+  const occurrences = []
   const candidates = []
 
   for (let start = 0; start <= line.index; start += 1) {
@@ -353,17 +373,20 @@ function collectLineWords(cell, character, rowDelta, columnDelta, label) {
       candidates.push(candidate)
 
       if (dictionarySet.has(candidate)) {
-        words.push(candidate)
+        occurrences.push({
+          word: candidate,
+          cells: line.cells.slice(start, end + 1),
+        })
       }
     }
   }
 
   return {
-    words,
+    occurrences,
     debug:
       `${label}: line=${line.characters.join("")} ` +
       `candidates=${candidates.length ? candidates.join(", ") : "none"} ` +
-      `matches=${words.length ? words.join(", ") : "none"}`,
+      `matches=${occurrences.length ? occurrences.map(occurrence => occurrence.word).join(", ") : "none"}`,
   }
 }
 
@@ -385,6 +408,7 @@ function buildLine(row, column, character, rowDelta, columnDelta) {
   }
 
   const characters = []
+  const cells = []
   let index = -1
   let currentRow = startRow
   let currentColumn = startColumn
@@ -402,11 +426,12 @@ function buildLine(row, column, character, rowDelta, columnDelta) {
     }
 
     characters.push(currentCharacter)
+    cells.push(getCell(currentRow, currentColumn))
     currentRow += rowDelta
     currentColumn += columnDelta
   }
 
-  return { characters, index }
+  return { characters, cells, index }
 }
 
 function hasAdjacentTile(cell) {
@@ -447,8 +472,110 @@ function setStatus(message) {
   statusElement.textContent = message
 }
 
+function updateScoreDisplay(score) {
+  totalScoreElement.textContent = String(totalScore)
+  turnBaseElement.textContent = String(score.base)
+  turnMultiplierElement.textContent = String(score.multiplier)
+  turnScoreElement.textContent = String(score.turn)
+}
+
 function setDebug(lines) {
   debugElement.textContent = Array.isArray(lines) ? lines.join("\n") : String(lines)
+}
+
+async function animateScoring(occurrences) {
+  if (!occurrences.length) {
+    return
+  }
+
+  isAnimatingScore = true
+  let runningBase = 0
+
+  updateScoreDisplay({ base: 0, multiplier: 0, turn: 0 })
+
+  for (let index = 0; index < occurrences.length; index += 1) {
+    const occurrence = occurrences[index]
+    const previousBase = runningBase
+    const wordScore = calculateWordScore(occurrence.word)
+    runningBase += wordScore
+    const turnScore = runningBase * (index + 1)
+
+    flashWordCells(occurrence.cells)
+    pulseTurnScore()
+    await animateBaseCount(previousBase, runningBase, {
+      multiplier: index + 1,
+      turn: turnScore,
+    })
+  }
+
+  isAnimatingScore = false
+}
+
+function calculateScore(words) {
+  const base = words.reduce((sum, word) => {
+    return sum + calculateWordScore(word)
+  }, 0)
+  const multiplier = words.length
+  return {
+    base,
+    multiplier,
+    turn: base * multiplier,
+  }
+}
+
+function calculateWordScore(word) {
+  const length = [...normalizeKana(word)].length
+  return 10 * 2 ** (length - 1)
+}
+
+function flashWordCells(cells) {
+  cells.forEach(cell => {
+    if (!cell) {
+      return
+    }
+
+    const tile = cell.querySelector(".tile")
+    cell.classList.remove("word-flash")
+    tile?.classList.remove("word-pop")
+    void cell.offsetWidth
+    cell.classList.add("word-flash")
+    tile?.classList.add("word-pop")
+    setTimeout(() => {
+      cell.classList.remove("word-flash")
+      tile?.classList.remove("word-pop")
+    }, 320)
+  })
+}
+
+function pulseTurnScore() {
+  turnScoreElement.classList.remove("is-counting")
+  void turnScoreElement.offsetWidth
+  turnScoreElement.classList.add("is-counting")
+  setTimeout(() => {
+    turnScoreElement.classList.remove("is-counting")
+  }, 280)
+}
+
+function wait(ms) {
+  return new Promise(resolve => {
+    setTimeout(resolve, ms)
+  })
+}
+
+async function animateBaseCount(from, to, scoreState) {
+  const steps = Math.max(4, Math.min(10, to - from))
+  const duration = 320
+
+  for (let step = 1; step <= steps; step += 1) {
+    const progress = step / steps
+    const baseValue = Math.round(from + (to - from) * progress)
+    updateScoreDisplay({
+      base: baseValue,
+      multiplier: scoreState.multiplier,
+      turn: scoreState.turn,
+    })
+    await wait(Math.round(duration / steps))
+  }
 }
 
 function normalizeKana(value) {
