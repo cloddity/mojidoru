@@ -21,6 +21,11 @@ const totalScoreElement = document.querySelector("[data-total-score]")
 const turnBaseElement = document.querySelector("[data-turn-base]")
 const turnMultiplierElement = document.querySelector("[data-turn-multiplier]")
 const turnScoreElement = document.querySelector("[data-turn-score]")
+const openSettingsButton = document.querySelector("[data-open-settings]")
+const closeSettingsButton = document.querySelector("[data-close-settings]")
+const settingsBackdrop = document.querySelector("[data-settings-backdrop]")
+const settingsModal = document.querySelector("[data-settings-modal]")
+const themeToggle = document.querySelector("[data-theme-toggle]")
 
 let selectedTileId = null
 let activeTileChar = null
@@ -29,8 +34,10 @@ let dictionarySet = new Set()
 let totalScore = 0
 let isAnimatingScore = false
 
+initializeTheme()
 buildBoard()
 wireTrayDropzone()
+wireSettings()
 loadDictionary()
 
 function buildBoard() {
@@ -105,6 +112,44 @@ function loadDictionary() {
   setStatus("Dictionary unavailable. Demo is using fallback tiles.")
   setDebug(["dictionary unavailable", "window.__DICT__ missing or empty"])
   updateScoreDisplay({ base: 0, multiplier: 0, turn: 0 })
+}
+
+function wireSettings() {
+  openSettingsButton.addEventListener("click", openSettings)
+  closeSettingsButton.addEventListener("click", closeSettings)
+  settingsBackdrop.addEventListener("click", closeSettings)
+  themeToggle.addEventListener("change", () => {
+    const nextTheme = themeToggle.checked ? "dark" : "light"
+    applyTheme(nextTheme)
+  })
+
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !settingsModal.hidden) {
+      closeSettings()
+    }
+  })
+}
+
+function openSettings() {
+  settingsBackdrop.hidden = false
+  settingsModal.hidden = false
+}
+
+function closeSettings() {
+  settingsBackdrop.hidden = true
+  settingsModal.hidden = true
+}
+
+function initializeTheme() {
+  const storedTheme = window.localStorage.getItem("theme")
+  const theme = storedTheme === "dark" ? "dark" : "light"
+  applyTheme(theme)
+}
+
+function applyTheme(theme) {
+  document.body.dataset.theme = theme
+  themeToggle.checked = theme === "dark"
+  window.localStorage.setItem("theme", theme)
 }
 
 function placeStarterTile(character) {
@@ -281,9 +326,10 @@ async function moveTileToCell(tileId, cell) {
   clearSelection()
   setStatus(`Valid: ${placement.words.join(" / ")}`)
   setDebug(placement.debug)
+  const previousTotal = totalScore
   await animateScoring(placement.occurrences)
   totalScore += placement.score.turn
-  updateScoreDisplay(placement.score)
+  await animateTotalScore(previousTotal, totalScore, placement.score)
 }
 
 function moveTileToTray(tileId) {
@@ -472,8 +518,8 @@ function setStatus(message) {
   statusElement.textContent = message
 }
 
-function updateScoreDisplay(score) {
-  totalScoreElement.textContent = String(totalScore)
+function updateScoreDisplay(score, totalValue = totalScore) {
+  totalScoreElement.textContent = String(totalValue)
   turnBaseElement.textContent = String(score.base)
   turnMultiplierElement.textContent = String(score.multiplier)
   turnScoreElement.textContent = String(score.turn)
@@ -506,9 +552,23 @@ async function animateScoring(occurrences) {
       multiplier: index + 1,
       turn: turnScore,
     })
+    await wait(120)
   }
 
   isAnimatingScore = false
+}
+
+async function animateTotalScore(from, to, score) {
+  const steps = Math.max(4, Math.min(12, Math.abs(to - from)))
+  const duration = 320
+
+  for (let step = 1; step <= steps; step += 1) {
+    const progress = step / steps
+    const totalValue = Math.round(from + (to - from) * progress)
+    updateScoreDisplay(score, totalValue)
+    pulseTotalScore()
+    await wait(Math.round(duration / steps))
+  }
 }
 
 function calculateScore(words) {
@@ -553,6 +613,15 @@ function pulseTurnScore() {
   turnScoreElement.classList.add("is-counting")
   setTimeout(() => {
     turnScoreElement.classList.remove("is-counting")
+  }, 280)
+}
+
+function pulseTotalScore() {
+  totalScoreElement.classList.remove("is-counting")
+  void totalScoreElement.offsetWidth
+  totalScoreElement.classList.add("is-counting")
+  setTimeout(() => {
+    totalScoreElement.classList.remove("is-counting")
   }, 280)
 }
 

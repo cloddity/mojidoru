@@ -11,6 +11,19 @@
   </head>
   <body>
     <main class="app-shell">
+      <header class="header-bar">
+        <div class="header-title">Moji Board</div>
+        <button
+          class="icon-button"
+          type="button"
+          data-open-settings
+          aria-haspopup="dialog"
+          aria-controls="settings-modal"
+          aria-label="Open settings"
+        >
+          Settings
+        </button>
+      </header>
       <div class="topbar">
         <div class="total-score">
           <span class="score-label">Total</span>
@@ -20,6 +33,10 @@
       <div class="layout">
         <aside class="sidebar">
           <section class="score-panel" aria-label="Score breakdown">
+            <div class="score-row score-turn">
+              <span class="score-label">Turn</span>
+              <strong data-turn-score>0</strong>
+            </div>
             <div class="score-row">
               <span class="score-label">Base</span>
               <strong data-turn-base>0</strong>
@@ -30,10 +47,6 @@
               <strong data-turn-multiplier>0</strong>
             </div>
             <div class="score-formula">words made</div>
-            <div class="score-row score-turn">
-              <span class="score-label">Turn</span>
-              <strong data-turn-score>0</strong>
-            </div>
           </section>
           <aside class="tray" data-tray aria-label="Hiragana tiles"></aside>
         </aside>
@@ -49,5 +62,37 @@
         </section>
       </div>
     </main>
+    <div class="modal-backdrop" data-settings-backdrop hidden></div>
+    <section
+      class="settings-modal"
+      id="settings-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-title"
+      data-settings-modal
+      hidden
+    >
+      <div class="settings-header">
+        <h2 id="settings-title">Settings</h2>
+        <button
+          class="icon-button"
+          type="button"
+          data-close-settings
+          aria-label="Close settings"
+        >
+          Close
+        </button>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-title">Dark Mode</div>
+          <div class="setting-copy">Switch between light and dark themes.</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" data-theme-toggle />
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+    </section>
   </body>
 </html>
