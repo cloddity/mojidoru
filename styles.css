@@ -132,8 +132,8 @@ button {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
   gap: 5px;
+  container-type: inline-size;
 }
 
 .score-panel {
@@ -212,15 +212,31 @@ button {
   padding: 0;
   background: var(--tile-bg);
   color: var(--text);
-  font-size: clamp(1.48rem, 4.3vw, 2.05rem);
   font-weight: 700;
   line-height: 1;
   user-select: none;
 }
 
+.tile {
+  font-size: clamp(1.48rem, 4.3vw, 2.05rem);
+}
+
+.board-cell {
+  font-size: calc(55cqw / var(--board-cols, 5));
+}
+
+.board-cell > .tile {
+  font-size: inherit;
+}
+
 .board-cell {
   border: 2.5px solid var(--grid-line);
   transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.board-cell.is-inactive {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .board-cell.has-tile {

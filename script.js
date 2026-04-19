@@ -1,8 +1,20 @@
-const BOARD_ROWS = 5
-const BOARD_COLUMNS = 5
+const BOARD_CONFIG = window.__BOARD__ || {
+  layout: [
+    [0, 1, 1, 1, 0],
+    [1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1],
+    [0, 1, 1, 1, 0],
+  ],
+  starterTiles: [{ row: 2, column: 2, character: "\u3042" }]
+}
+
+const BOARD_LAYOUT = BOARD_CONFIG.layout
+const BOARD_ROWS = BOARD_LAYOUT.length
+const BOARD_COLUMNS = Math.max(...BOARD_LAYOUT.map(row => row.length))
 const TRAY_TILE_COUNT = 6
-const STARTER_POSITION = { row: 2, column: 2 }
-const STARTER_CHARACTER = "\u3042"
+const STARTER_TILES = BOARD_CONFIG.starterTiles
+
 const HIRAGANA_REGEX = /[\u3041-\u3093\u30fc]/g
 const FALLBACK_HIRAGANA = [
   "\u3042",
@@ -42,9 +54,20 @@ loadDictionary()
 
 function buildBoard() {
   const fragment = document.createDocumentFragment()
+  boardElement.style.gridTemplateColumns = `repeat(${BOARD_COLUMNS}, 1fr)`
+  boardElement.style.setProperty("--board-cols", String(BOARD_COLUMNS))
 
   for (let row = 0; row < BOARD_ROWS; row += 1) {
     for (let column = 0; column < BOARD_COLUMNS; column += 1) {
+      const isActive = BOARD_LAYOUT[row]?.[column] === 1
+
+      if (!isActive) {
+        const cell = document.createElement("div")
+        cell.className = "board-cell is-inactive"
+        fragment.append(cell)
+        continue
+      }
+
       const cell = document.createElement("button")
       cell.type = "button"
       cell.className = "board-cell"
@@ -93,13 +116,13 @@ function loadDictionary() {
   if (source.length > 0) {
     dictionaryWords = source.map(word => normalizeKana(word)).filter(Boolean)
     dictionarySet = new Set(dictionaryWords)
-    placeStarterTile(STARTER_CHARACTER)
+    placeStarterTiles(STARTER_TILES)
     renderTray(buildTilePool(dictionaryWords))
-    setStatus("Starter tile is \u3042. Place a tile next to it and form a word.")
+    setStatus("Starter tiles placed. Place a tile next to them and form a word.")
     setDebug([
       "dictionary loaded",
       `entries: ${dictionaryWords.length}`,
-      `starter: ${STARTER_CHARACTER}`,
+      `starters: ${STARTER_TILES.length}`,
     ])
     updateScoreDisplay({ base: 0, multiplier: 0, turn: 0 })
     return
@@ -107,7 +130,7 @@ function loadDictionary() {
 
   dictionaryWords = []
   dictionarySet = new Set()
-  placeStarterTile(STARTER_CHARACTER)
+  placeStarterTiles(STARTER_TILES)
   renderTray(FALLBACK_HIRAGANA)
   setStatus("Dictionary unavailable. Demo is using fallback tiles.")
   setDebug(["dictionary unavailable", "window.__DICT__ missing or empty"])
@@ -152,15 +175,16 @@ function applyTheme(theme) {
   window.localStorage.setItem("theme", theme)
 }
 
-function placeStarterTile(character) {
-  const starterCell = getCell(STARTER_POSITION.row, STARTER_POSITION.column)
-
-  if (!starterCell) {
-    return
-  }
-
-  starterCell.innerHTML = ""
-  starterCell.append(createBoardTile(character, true))
+function placeStarterTiles(tiles) {
+  if (!tiles || tiles.length === 0) return
+  
+  tiles.forEach(starter => {
+    const starterCell = getCell(starter.row, starter.column)
+    if (starterCell) {
+      starterCell.innerHTML = ""
+      starterCell.append(createBoardTile(starter.character, true))
+    }
+  })
   refreshBoardState()
 }
 
